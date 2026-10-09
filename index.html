@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Ракетка</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0a0a1a; font-family: -apple-system, Arial, sans-serif; color: #fff; user-select: none; }
+  #game { position: absolute; top: 0; left: 0; right: 0; bottom: 0; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .hud { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between; font-size: 14px; font-weight: bold; pointer-events: none; z-index: 5; text-shadow: 0 2px 4px rgba(0,0,0,.6); }
+  .hud .right { text-align: right; }
+
+  #multiplier {
+    position: absolute; top: 40%; left: 0; right: 0;
+    text-align: center; font-size: 72px; font-weight: bold;
+    color: #fff; text-shadow: 0 0 30px rgba(100,200,255,.8), 0 4px 8px rgba(0,0,0,.6);
+    pointer-events: none; z-index: 6;
+    display: none;
+  }
+
+  #boostBar {
+    position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%);
+    display: none; flex-direction: column; align-items: center; gap: 6px;
+    z-index: 7; pointer-events: none;
+  }
+  #boostBar .boost-item {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,0,0,.75); border-radius: 20px;
+    padding: 8px 16px; font-weight: bold; font-size: 14px;
+    border: 2px solid #FFD700;
+    box-shadow: 0 0 20px rgba(255,215,0,.4);
+    animation: slideIn .3s ease;
+  }
+  #boostBar .boost-item .icon { font-size: 20px; }
+  #boostBar .boost-item .time { color: #FFD700; min-width: 30px; text-align: right; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(20px);} to {opacity:1; transform: translateY(0);} }
+
+  #bottomPanel {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 16px; z-index: 8;
+    background: linear-gradient(to top, rgba(0,0,0,.9), rgba(0,0,0,0));
+    display: flex; gap: 10px; align-items: stretch;
+  }
+  #bottomPanel input {
+    flex: 1; min-width: 0; padding: 14px; font-size: 18px; font-weight: bold;
+    background: #1a1a2e; border: 2px solid #333; border-radius: 12px;
+    color: #fff; text-align: center; outline: none;
+  }
+  #bottomPanel input:focus { border-color: #4CAF50; }
+  #bottomPanel input:disabled { opacity: .5; }
+  #bottomPanel button {
+    padding: 14px 24px; font-size: 16px; font-weight: bold;
+    border: none; border-radius: 12px; cursor: pointer;
+    min-width: 110px; transition: transform .05s;
+  }
+  #bottomPanel button:active { transform: scale(.97); }
+  #btnPlay { background: #4CAF50; color: #fff; }
+  #btnPlay:disabled { background: #333; color: #666; cursor: not-allowed; }
+  #btnStop { background: #F44336; color: #fff; }
+  #btnStop:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+  .overlay {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.9); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; padding: 24px;
+    z-index: 10; text-align: center;
+  }
+  .overlay h1 { font-size: 32px; margin-bottom: 12px; }
+  .overlay p { font-size: 16px; margin: 4px 0; opacity: .9; }
+  .overlay .btn { margin-top: 14px; padding: 14px 32px; background: #4CAF50; color: #fff; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; min-width: 220px; }
+  .overlay .btn.secondary { background: #555; }
+  .overlay .btn:active { transform: scale(.97); }
+
+  .shop-list { width: 100%; max-width: 400px; margin-top: 16px; max-height: 45vh; overflow-y: auto; }
+  .skin-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; margin: 8px 0; background: #1a1a2e; border-radius: 12px; }
+  .skin-item .swatch { width: 32px; height: 32px; border-radius: 8px; margin-right: 12px; box-shadow: 0 0 12px currentColor; }
+  .skin-item .info { flex: 1; text-align: left; }
+  .skin-item .info .name { font-weight: bold; }
+  .skin-item .info .price { font-size: 12px; opacity: .7; }
+  .skin-item button { padding: 8px 16px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
+  .skin-item button.buy { background: #4CAF50; color: #fff; }
+  .skin-item button.use { background: #2196F3; color: #fff; }
+  .skin-item button.active { background: #FFD700; color: #000; }
+
+  #boostToast {
+    position: absolute; top: 110px; left: 50%; transform: translateX(-50%);
+    background: rgba(255,215,0,.95); color: #000; font-weight: bold;
+    padding: 12px 22px; border-radius: 24px; font-size: 16px; white-space: nowrap;
+    opacity: 0; transition: opacity .3s; pointer-events: none; z-index: 9;
+    box-shadow: 0 0 30px rgba(255,215,0,.8);
+  }
+  #boostToast.show { opacity: 1; }
+
+  #history {
+    position: absolute; top: 60px; left: 12px; right: 12px;
+    display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px;
+    pointer-events: none; z-index: 4;
+  }
+  #history span { padding: 3px 8px; border-radius: 10px; font-weight: bold; }
+  #history span.win { background: rgba(76,175,80,.3); color: #4CAF50; }
+  #history span.lose { background: rgba(244,67,54,.3); color: #F44336; }
+</style>
+</head>
+<body>
+<div id="game">
+  <canvas id="canvas"></canvas>
+
+  <div class="hud">
+    <div class="left">
+      <div>Баланс: <span id="hudBalance">1000</span> $</div>
+      <div>Ставка: <span id="hudBet">0</span> $</div>
+    </div>
+    <div class="right">
+      <div>Бонус: <span id="hudBonus">—</span></div>
+    </div>
+  </div>
+
+  <div id="history"></div>
+  <div id="multiplier">1.00x</div>
+  <div id="boostToast"></div>
+  <div id="boostBar"></div>
+
+  <div id="bottomPanel" style="display:none;">
+    <input type="number" id="betInput" placeholder="Ставка" min="1" step="10" value="100">
+    <button id="btnPlay">Играть</button>
+    <button id="btnStop" disabled>Стоп</button>
+  </div>
+</div>
+<script>
+/* ============================================================
+   TELEGRAM INIT
+============================================================ */
+var tg = (window.Telegram && window.Telegram.WebApp) ? window.Telegram.WebApp : null;
+if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
+
+/* ============================================================
+   СОХРАНЕНИЕ
+============================================================ */
+var balance = 1000;
+var ownedSkins = [0];
+var currentSkin = 0;
+var betAmount = 100;
+
+function applySave(value) {
+  if (!value) return;
+  try {
+    var d = JSON.parse(value);
+    balance = (typeof d.balance === 'number' && isFinite(d.balance)) ? d.balance : 1000;
+    ownedSkins = (d.ownedSkins && d.ownedSkins.length) ? d.ownedSkins : [0];
+    currentSkin = d.currentSkin || 0;
+  } catch (e) {}
+}
+
+function loadSave(cb) {
+  var done = false;
+  function finish() { if (done) return; done = true; cb(); }
+  try { applySave(localStorage.getItem('rocketSave')); } catch (e) {}
+
+  if (!tg || !tg.CloudStorage || !tg.CloudStorage.getItem) { return finish(); }
+  setTimeout(finish, 1500);
+  try {
+    tg.CloudStorage.getItem('rocketSave', function (err, value) {
+      if (!done && !err) applySave(value);
+      finish();
+    });
+  } catch (e) { finish(); }
+}
+
+function saveData() {
+  var payload = JSON.stringify({ balance: balance, ownedSkins: ownedSkins, currentSkin: currentSkin });
+  try { localStorage.setItem('rocketSave', payload); } catch (e) {}
+  if (!tg || !tg.CloudStorage || !tg.CloudStorage.setItem) return;
+  try { tg.CloudStorage.setItem('rocketSave', payload, function () {}); } catch (e) {}
+}
+
+/* ============================================================
+   СКИНЫ
+============================================================ */
+var SKINS = [
+  { id: 0, name: 'Обычная',    price: 0,     color: '#4CAF50' },
+  { id: 1, name: 'Синяя',      price: 500,   color: '#2196F3' },
+  { id: 2, name: 'Огненная',   price: 1500,  color: '#F44336' },
+  { id: 3, name: 'Фиолетовая', price: 3000,  color: '#9C27B0' },
+  { id: 4, name: 'Золотая',    price: 5000,  color: '#FFD700' },
+  { id: 5, name: 'Ледяная',    price: 10000, color: '#00BCD4' }
+];
+
+/* ============================================================
+   CANVAS
+============================================================ */
+var canvas = document.getElementById('canvas');
+var ctx = canvas.getContext('2d');
+var W = 0, H = 0;
+var dpr = window.devicePixelRatio || 1;
+var stars = [];
+
+function initStars() {
+  stars = [];
+  for (var i = 0; i < 100; i++) {
+    stars.push({ x: Math.random() * W, y: Math.random() * H, r: Math.random() * 1.5 + 0.3 });
+  }
+}
+
+function resize() {
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  initStars();
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ============================================================
+   СОСТОЯНИЕ ИГРЫ
+============================================================ */
+var gameState = 'menu'; // menu | flying | crashing | ended
+var multiplier = 1.0;
+var flyStartTime = 0;
+var crashMultiplier = 0;
+var rocketX = 0, rocketY = 0;
+var rocketVisible = false;
+var rocketTrail = [];
+var particles = [];
+var lastFrameTime = 0;
+var crashTimer = null;
+
+var boostSpeed = { active: false, until: 0 };
+var boostMoney = { active: false, until: 0 };
+var moneyAccumulated = 0;
+
+var history = [];
+
+/* ============================================================
+   ЛОГИКА КРАША
+   Минимальная точка взрыва — 1.30x (раньше взорваться нельзя).
+============================================================ */
+function generateCrashPoint() {
+  var r = Math.random();
+  var crash = 1 / (1 - r * 0.90);
+  if (crash > 30) crash = 30;
+  if (crash < 1.30) crash = 1.30 + Math.random() * 0.5;
+  return Math.round(crash * 100) / 100;
+}
+
+/* ============================================================
+   СТАРТ / СТОП ИГРЫ
+============================================================ */
+var bottomPanel = document.getElementById('bottomPanel');
+var betInput = document.getElementById('betInput');
+var btnPlay = document.getElementById('btnPlay');
+var btnStop = document.getElementById('btnStop');
+var multEl = document.getElementById('multiplier');
+var boostToast = document.getElementById('boostToast');
+var boostBar = document.getElementById('boostBar');
+
+function startGame() {
+  if (gameState === 'flying' || gameState === 'crashing') return;
+
+  var bet = parseInt(betInput.value, 10) || 0;
+  if (bet < 1) { alert('Ставка должна быть больше 0'); return; }
+  if (bet > balance) { alert('Недостаточно средств'); return; }
+
+  betAmount = bet;
+  balance -= bet;
+  saveData();
+
+  clearTimeout(crashTimer);
+  gameState = 'flying';
+  multiplier = 1.0;
+  crashMultiplier = generateCrashPoint();
+  flyStartTime = performance.now();
+  lastFrameTime = flyStartTime;
+  rocketX = W - 60;
+  rocketY = H - 180;
+  rocketVisible = true;
+  rocketTrail = [];
+  particles = [];
+  boostSpeed = { active: false, until: 0 };
+  boostMoney = { active: false, until: 0 };
+  moneyAccumulated = 0;
+
+  btnPlay.disabled = true;
+  btnStop.disabled = false;
+  betInput.disabled = true;
+  multEl.style.display = 'block';
+  multEl.textContent = '1.00x';
+  boostToast.classList.remove('show');
+  resetBoostBar();
+  updateHUD();
+}
+
+function stopGame() {
+  if (gameState !== 'flying') return;
+  gameState = 'ended';
+
+  var win = Math.round(betAmount * multiplier + moneyAccumulated);
+  balance += win;
+  saveData();
+
+  history.unshift({ mult: multiplier, win: true });
+  if (history.length > 8) history.pop();
+  renderHistory();
+
+  finishRound(true, win, multiplier);
+}
+
+function crashGame() {
+  if (gameState !== 'crashing') return;
+  gameState = 'ended';
+
+  history.unshift({ mult: multiplier, win: false });
+  if (history.length > 8) history.pop();
+  renderHistory();
+
+  finishRound(false, betAmount, multiplier);
+}
+
+function finishRound(won, amount, mult) {
+  btnPlay.disabled = false;
+  btnStop.disabled = true;
+  betInput.disabled = false;
+  multEl.style.display = 'none';
+  resetBoostBar();
+  betInput.value = Math.max(1, Math.min(balance, betAmount));
+  updateHUD();
+
+  var overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  var title = won ? 'Забрал!' : 'Взрыв!';
+  var color = won ? '#4CAF50' : '#F44336';
+  overlay.innerHTML =
+    '<h1 style="color:' + color + '">' + title + '</h1>' +
+    '<p>Множитель: <b>' + mult.toFixed(2) + 'x</b></p>' +
+    (won
+      ? '<p>Выигрыш: <b style="color:#4CAF50">+' + amount + ' $</b></p>'
+      : '<p>Потеряно: <b style="color:#F44336">-' + amount + ' $</b></p>') +
+    '<p>Баланс: <b>' + balance + ' $</b></p>' +
+    '<button class="btn" id="btnNext">Играть ещё</button>' +
+    '<button class="btn secondary" id="btnToMenu">В меню</button>';
+  document.getElementById('game').appendChild(overlay);
+
+  overlay.querySelector('#btnNext').onclick = function () {
+    overlay.remove();
+    startGame();
+  };
+  overlay.querySelector('#btnToMenu').onclick = function () {
+    overlay.remove();
+    showMainMenu();
+  };
+}
+
+/* ============================================================
+   ИГРОВОЙ ЦИКЛ
+============================================================ */
+function loop(t) {
+  var dt = t - lastFrameTime;
+  lastFrameTime = t;
+  if (dt < 0 || isNaN(dt)) dt = 16;
+  if (dt > 60) dt = 60;
+
+  if (gameState === 'flying') updateFlying(dt);
+
+  updateTrail(dt);
+  updateBoostBar();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function updateFlying(dt) {
+  var now = performance.now();
+  var elapsed = (now - flyStartTime) / 1000;
+
+  // Истечение бустов
+  if (boostSpeed.active && now > boostSpeed.until) boostSpeed.active = false;
+  if (boostMoney.active && now > boostMoney.until) boostMoney.active = false;
+
+  var baseRate = 0.35 + elapsed * 0.08;
+  if (boostSpeed.active) baseRate *= 2.5;
+  multiplier += baseRate * (dt / 1000);
+
+  var perSecond = betAmount * 0.05;
+  if (boostMoney.active) perSecond *= 3;
+  moneyAccumulated += perSecond * (dt / 1000);
+
+  // Случайные бусты
+  if (Math.random() < 0.012 && !boostSpeed.active && !boostMoney.active) {
+    if (Math.random() < 0.5) {
+      boostSpeed.active = true;
+      boostSpeed.until = now + 3000;
+      showToast('🚀 БУСТ СКОРОСТИ x2.5 (3 сек)');
+    } else {
+      boostMoney.active = true;
+      boostMoney.until = now + 5000;
+      showToast('💰 БУСТ ДЕНЕГ x3 (5 сек)');
+    }
+  }
+
+  // Взрыв
+  if (multiplier >= crashMultiplier) {
+    multiplier = crashMultiplier;
+    multEl.textContent = multiplier.toFixed(2) + 'x';
+    gameState = 'crashing';
+    btnStop.disabled = true;
+    rocketVisible = false;
+    createExplosion();
+    crashTimer = setTimeout(crashGame, 600);
+    return;
+  }
+
+  var progress = Math.min(1, elapsed / 12);
+  var targetX = W - 60 - (W - 160) * progress;
+  var targetY = H - 180 - (H - 380) * Math.sin(progress * Math.PI * 0.7);
+  if (boostSpeed.active) { targetX -= 20; targetY -= 20; }
+  rocketX = targetX;
+  rocketY = targetY;
+
+  rocketTrail.push({ x: rocketX, y: rocketY, life: 500, maxLife: 500 });
+
+  if (Math.random() < 0.6) {
+    particles.push({
+      x: rocketX + 15, y: rocketY + 15,
+      vx: -1 - Math.random() * 2, vy: (Math.random() - 0.5) * 1.5,
+      life: 400, maxLife: 400,
+      color: boostSpeed.active ? '#FFD700' : '#FF9800',
+      size: 3 + Math.random() * 3
+    });
+  }
+
+  multEl.textContent = multiplier.toFixed(2) + 'x';
+  document.getElementById('hudBet').textContent = Math.round(betAmount * multiplier + moneyAccumulated);
+  document.getElementById('hudBonus').textContent = boostMoney.active ? 'x3 💰' : (boostSpeed.active ? '🚀' : '—');
+}
+
+function updateTrail(dt) {
+  for (var i = rocketTrail.length - 1; i >= 0; i--) {
+    rocketTrail[i].life -= dt;
+    if (rocketTrail[i].life <= 0) rocketTrail.splice(i, 1);
+  }
+  for (var j = particles.length - 1; j >= 0; j--) {
+    particles[j].x += particles[j].vx;
+    particles[j].y += particles[j].vy;
+    particles[j].life -= dt;
+    if (particles[j].life <= 0) particles.splice(j, 1);
+  }
+}
+
+function createExplosion() {
+  for (var i = 0; i < 60; i++) {
+    var a = Math.random() * Math.PI * 2;
+    var s = 2 + Math.random() * 6;
+    particles.push({
+      x: rocketX + 15, y: rocketY + 15,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      life: 800, maxLife: 800,
+      color: Math.random() < 0.5 ? '#FF9800' : '#F44336',
+      size: 4 + Math.random() * 4
+    });
+  }
+}
+
+/* ============================================================
+   ИНДИКАТОР АКТИВНЫХ БУСТОВ
+   Разметка пересобирается только при смене набора бустов
+   (иначе анимация появления перезапускалась бы каждый кадр),
+   а каждый кадр обновляется лишь текст таймера.
+============================================================ */
+var boostBarKey = '';
+
+function resetBoostBar() {
+  boostBarKey = '';
+  boostBar.innerHTML = '';
+  boostBar.style.display = 'none';
+}
+
+function updateBoostBar() {
+  if (gameState !== 'flying' && gameState !== 'crashing') {
+    if (boostBarKey !== '') resetBoostBar();
+    return;
+  }
+  var key = (boostSpeed.active ? 's' : '') + (boostMoney.active ? 'm' : '');
+  if (key !== boostBarKey) {
+    boostBarKey = key;
+    var html = '';
+    if (boostSpeed.active) {
+      html += '<div class="boost-item"><span class="icon">🚀</span><span>СКОРОСТЬ x2.5</span><span class="time" id="timeSpeed"></span></div>';
+    }
+    if (boostMoney.active) {
+      html += '<div class="boost-item"><span class="icon">💰</span><span>ДЕНЬГИ x3</span><span class="time" id="timeMoney"></span></div>';
+    }
+    boostBar.innerHTML = html;
+    boostBar.style.display = html ? 'flex' : 'none';
+  }
+  var now = performance.now();
+  if (boostSpeed.active) {
+    var el1 = document.getElementById('timeSpeed');
+    if (el1) el1.textContent = Math.max(0, Math.ceil((boostSpeed.until - now) / 1000)) + 'с';
+  }
+  if (boostMoney.active) {
+    var el2 = document.getElementById('timeMoney');
+    if (el2) el2.textContent = Math.max(0, Math.ceil((boostMoney.until - now) / 1000)) + 'с';
+  }
+}
+
+/* ============================================================
+   ОТРИСОВКА
+============================================================ */
+function draw() {
+  var grd = ctx.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, '#0a0a1a');
+  grd.addColorStop(0.5, '#12122a');
+  grd.addColorStop(1, '#1a1a2e');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  for (var i = 0; i < stars.length; i++) {
+    var s = stars[i];
+    ctx.globalAlpha = 0.3 + Math.random() * 0.5;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  var groundGrd = ctx.createLinearGradient(0, H - 60, 0, H);
+  groundGrd.addColorStop(0, 'rgba(20,20,50,0)');
+  groundGrd.addColorStop(1, 'rgba(20,20,50,0.9)');
+  ctx.fillStyle = groundGrd;
+  ctx.fillRect(0, H - 60, W, 60);
+
+  for (var k = 0; k < rocketTrail.length; k++) {
+    var tr = rocketTrail[k];
+    var alpha = tr.life / tr.maxLife;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.fillStyle = '#FF9800';
+    ctx.beginPath();
+    ctx.arc(tr.x + 15, tr.y + 15, 6 * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  for (var p = 0; p < particles.length; p++) {
+    var pt = particles[p];
+    var a = pt.life / pt.maxLife;
+    ctx.globalAlpha = Math.max(0, a);
+    ctx.fillStyle = pt.color;
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, Math.max(0.1, pt.size * a), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  if (rocketVisible) {
+    var skin = SKINS[0];
+    for (var si = 0; si < SKINS.length; si++) {
+      if (SKINS[si].id === currentSkin) { skin = SKINS[si]; break; }
+    }
+    drawRocket(rocketX, rocketY, skin.color);
+  }
+}
+
+function drawRocket(x, y, color) {
+  var size = 30;
+  ctx.save();
+  ctx.translate(x + size / 2, y + size / 2);
+
+  ctx.shadowBlur = 25;
+  ctx.shadowColor = color;
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(size / 2, -size / 2);
+  ctx.lineTo(size / 2 - 6, size / 2 - 8);
+  ctx.lineTo(-size / 2 + 6, size / 2 - 8);
+  ctx.lineTo(-size / 2, size / 2 - 8);
+  ctx.lineTo(-size / 2, size / 2);
+  ctx.lineTo(size / 2, size / 2);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(0, -3, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#FF9800';
+  ctx.beginPath();
+  ctx.moveTo(-size / 2, size / 2);
+  ctx.lineTo(-size / 2 - 12 - Math.random() * 8, size / 2 + 4);
+  ctx.lineTo(-size / 2, size / 2 + 10);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = '#FFD700';
+  ctx.beginPath();
+  ctx.moveTo(-size / 2, size / 2 + 2);
+  ctx.lineTo(-size / 2 - 6 - Math.random() * 6, size / 2 + 4);
+  ctx.lineTo(-size / 2, size / 2 + 8);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
+/* ============================================================
+   HUD / UI
+============================================================ */
+function updateHUD() {
+  document.getElementById('hudBalance').textContent = balance;
+  document.getElementById('hudBet').textContent = betAmount;
+  document.getElementById('hudBonus').textContent = boostMoney.active ? 'x3 💰' : (boostSpeed.active ? '🚀' : '—');
+}
+
+function showToast(text) {
+  boostToast.textContent = text;
+  boostToast.classList.add('show');
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(function () {
+    boostToast.classList.remove('show');
+  }, 2200);
+}
+
+function renderHistory() {
+  var el = document.getElementById('history');
+  var html = '';
+  for (var i = 0; i < history.length; i++) {
+    var h = history[i];
+    html += '<span class="' + (h.win ? 'win' : 'lose') + '">' + h.mult.toFixed(2) + 'x</span>';
+  }
+  el.innerHTML = html;
+}
+
+/* ============================================================
+   ГЛАВНОЕ МЕНЮ
+============================================================ */
+function clearOverlays() {
+  var els = document.querySelectorAll('.overlay');
+  for (var i = 0; i < els.length; i++) els[i].remove();
+}
+
+function showMainMenu() {
+  clearOverlays();
+  clearTimeout(crashTimer);
+  gameState = 'menu';
+  bottomPanel.style.display = 'none';
+  multEl.style.display = 'none';
+  resetBoostBar();
+  rocketVisible = false;
+  rocketTrail = [];
+  particles = [];
+  updateHUD();
+
+  var overlay = document.createElement('div');
+  overlay.className = 'overlay';
+  overlay.innerHTML =
+    '<h1>Ракетка</h1>' +
+    '<p>Баланс: <b style="color:#FFD700">' + balance + ' $</b></p>' +
+    '<p style="opacity:.7; font-size:14px; margin-top:12px;">Введи ставку, нажми «Играть»,</p>' +
+    '<p style="opacity:.7; font-size:14px;">и забери выигрыш до взрыва!</p>' +
+    '<button class="btn" id="btnGoPlay">Играть</button>' +
+    '<button class="btn secondary" id="btnGoShop">Магазин скинов</button>' +
+    '<button class="btn secondary" id="btnReset">Сбросить прогресс</button>';
+  document.getElementById('game').appendChild(overlay);
+
+  overlay.querySelector('#btnGoPlay').onclick = function () {
+    clearOverlays();
+    bottomPanel.style.display = 'flex';
+    betInput.value = Math.max(1, Math.min(balance, betAmount));
+    btnPlay.disabled = false;
+    btnStop.disabled = true;
+    betInput.disabled = false;
+    updateHUD();
+  };
+  overlay.querySelector('#btnGoShop').onclick = showShop;
+  overlay.querySelector('#btnReset').onclick = function () {
+    if (confirm('Точно сбросить весь прогресс?')) {
+      balance = 1000;
+      ownedSkins = [0];
+      currentSkin = 0;
+      betAmount = 100;
+      history = [];
+      renderHistory();
+      saveData();
+      showMainMenu();
+    }
+  };
+}
+
+/* ============================================================
+   МАГАЗИН
+============================================================ */
+function showShop() {
+  clearOverlays();
+  bottomPanel.style.display = 'none';
+  resetBoostBar();
+
+  var overlay = document.createElement('div');
+  overlay.className = 'overlay';
+
+  var itemsHtml = '';
+  for (var i = 0; i < SKINS.length; i++) {
+    var s = SKINS[i];
+    var owned = ownedSkins.indexOf(s.id) !== -1;
+    var active = currentSkin === s.id;
+    var btn;
+    if (active) btn = '<button class="active" disabled>Выбран</button>';
+    else if (owned) btn = '<button class="use" data-action="use" data-id="' + s.id + '">Использовать</button>';
+    else btn = '<button class="buy" data-action="buy" data-id="' + s.id + '">Купить ' + s.price + ' $</button>';
+    itemsHtml +=
+      '<div class="skin-item">' +
+        '<div class="swatch" style="background:' + s.color + '; color:' + s.color + '"></div>' +
+        '<div class="info"><div class="name">' + s.name + '</div>' +
+        '<div class="price">' + (owned ? 'Куплен' : s.price + ' $') + '</div></div>' +
+        btn +
+      '</div>';
+  }
+
+  overlay.innerHTML =
+    '<h1>Магазин</h1>' +
+    '<p>Баланс: <b style="color:#FFD700">' + balance + ' $</b></p>' +
+    '<div class="shop-list">' + itemsHtml + '</div>' +
+    '<button class="btn secondary" id="btnBack">Назад</button>';
+  document.getElementById('game').appendChild(overlay);
+
+  overlay.querySelector('#btnBack').onclick = showMainMenu;
+
+  var btns = overlay.querySelectorAll('button[data-action]');
+  for (var j = 0; j < btns.length; j++) {
+    btns[j].onclick = (function (b) {
+      return function () {
+        var id = parseInt(b.getAttribute('data-id'), 10);
+        var action = b.getAttribute('data-action');
+        var skin = null;
+        for (var k = 0; k < SKINS.length; k++) if (SKINS[k].id === id) skin = SKINS[k];
+        if (!skin) return;
+
+        if (action === 'use') {
+          currentSkin = id;
+          saveData();
+          showShop();
+        } else if (action === 'buy') {
+          if (balance >= skin.price) {
+            balance -= skin.price;
+            ownedSkins.push(id);
+            currentSkin = id;
+            saveData();
+            showShop();
+          } else {
+            alert('Недостаточно средств');
+          }
+        }
+      };
+    })(btns[j]);
+  }
+
+  updateHUD();
+}
+
+/* ============================================================
+   ЗАПУСК
+============================================================ */
+btnPlay.addEventListener('click', startGame);
+btnStop.addEventListener('click', stopGame);
+
+loadSave(function () {
+  updateHUD();
+  showMainMenu();
+});
+
+lastFrameTime = performance.now();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
